@@ -1,0 +1,378 @@
+<?xml version="1.0"?>
+<queries>
+<query name="us.al.k12.dothan.franklin.students" coreTable="STUDENTS" flattened="true">
+		<description>Pulls student data for MCS Franklin</description>
+		<args>
+		</args>
+		<columns>
+      <column column="STUDENTS.STUDENT_NUMBER">Student_number</column>
+      <column column="U_DEF_EXT_STUDENTS.lunch_number">Lunch_number</column>
+      <column column="STUDENTS.STATE_STUDENTNUMBER">State_studentnumber</column>
+      <column column="STUDENTS.LAST_NAME">Last_name</column>
+			<column column="STUDENTS.FIRST_NAME">First_name</column>
+			<column column="STUDENTS.MIDDLE_NAME">Middle_name</column>
+      <column column="S_STU_X.Suffix">Suffix</column>
+      <column column="STUDENTS.GRADE_LEVEL">Grade</column>
+      <column column="STUDENTS.SCHOOLID">School_id</column>
+      <column column="STUDENTS.DOB">DOB</column>
+      <column column="STUDENTS.STREET">Street</column>
+			<column column="STUDENTS.CITY">City</column>
+			<column column="STUDENTS.STATE">State</column>
+			<column column="STUDENTS.ZIP">Zip</column>
+      <column column="STUDENTS.MAILING_STREET">Mailing_street</column>
+      <column column="STUDENTS.MAILING_CITY">Mailing_city</column>
+      <column column="STUDENTS.MAILING_STATE">Mailing_state</column>
+      <column column="STUDENTS.MAILING_ZIP">Mailing_zip</column>
+      <column column="STUDENTS.ENTRYDATE">Entry_date</column>
+      <column column="STUDENTS.EXITDATE">Exit_date</column>
+      <column column="STUDENTS.first_name">Active</column>
+      <column column="STUDENTS.SSN">SSN</column>
+      <column column="STUDENTS.HOME_PHONE">Home_phone</column>
+      <column column="STUDENTS.first_name">Work_phone</column>
+      <column column="STUDENTS.first_name">Head_of_household</column>
+      <column column="STUDENTS.Ethnicity">Race</column>
+      <column column="STUDENTS.HOME_ROOM">Home_room</column>
+      <column column="SCHOOLS.NAME">School_name</column>
+      <column column="STUDENTS.first_name">Language</column>
+			<column column="STUDENTS.GENDER">Gender</column>
+      <column column="STUDENTS.GUARDIANEMAIL">Guardian_email</column>
+    </columns>
+		<sql>
+			<![CDATA[
+			WITH 
+  current_year as (
+  /*
+  -- Define the year with the largest student count
+  -- as the current school year
+  */
+  select yearid 
+  from (
+    select 
+          t.yearid as yearid,
+          count(s.dcid) as cnt
+        from students s
+    join terms t
+      on    t.schoolid = s.schoolid and s.schoolid not in (888888,999999)
+			and t.yearid >= 30
+            and t.isyearrec = 1
+            and s.entrydate between t.firstday and t.lastday
+    group by t.yearid
+    order by count(s.dcid) desc
+  )
+  where rownum = 1
+),
+  active_students as (
+  /*
+  -- Pull the most current enrollment from the PowerSchool STUDENTS table
+  -- for students enrolled in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, STU.ID
+  FROM STUDENTS STU
+  where stu.student_number is not null
+  and stu.entrydate < stu.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where stu.entrydate <= terms.lastday
+              and stu.exitdate > terms.firstday
+              and stu.schoolid = terms.schoolid
+             )
+  union
+  /*
+  -- Pull all prior enrollment records from the PowerSchool REENROLLMENTS table
+  -- for students who had multiple enrollments in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, ENR.STUDENTID
+  FROM REENROLLMENTS ENR
+  inner join students stu on enr.studentid = stu.id
+  and stu.student_number is not null
+  where enr.entrydate < enr.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where enr.entrydate <= terms.lastday
+              and enr.exitdate > terms.firstday
+              and enr.schoolid = terms.schoolid
+              )
+  )
+SELECT
+  s.student_number as "Student_number",
+  s2.lunch_number as "Lunch_number",
+  s.state_studentnumber as "State_studentnumber",
+  ltrim(rtrim(replace(s.last_name,chr(34),chr(39)))) as "Last_name",
+  ltrim(rtrim(replace(s.first_name,chr(34),chr(39)))) as "First_name",
+  ltrim(rtrim(replace(s.middle_name,chr(34),chr(39)))) as "Middle_name",
+  s3.suffix as "Suffix",
+  case when s.grade_level < 0 then 'PK'
+		  when s.grade_level = 0 then 'KG'
+		  when s.grade_level > 12 then 'GR'
+		  else to_char(s.grade_level) end as "Grade",
+  substr(CONCAT('00',s.schoolid),-4) as "School_id",
+  to_char(s.dob,'MM/DD/YYYY') as "DOB",
+  s.street as "Street",
+  s.city as "City",
+  s.state as "State",
+  s.zip as "Zip",
+  s.mailing_street as "Mailing_street",
+  s.mailing_city as "Mailing_city",
+  s.mailing_state as "Mailing_state",
+  s.mailing_zip as "Mailing_zip",
+  s.entrydate as "Entry_date",
+  null as "Exit_date",
+  '1' as "Active",
+  s.ssn as "SSN",
+  s.home_phone as "Home_phone",
+  null as "Work_phone",
+  null as "Head_of_household",
+  s.ethnicity as "Race",
+  CONCAT(substr(CONCAT('000',cc.Section_Number),-4), CONCAT(' ', u.last_name)) as "Home_room",
+  sch.name as "School_name",
+  null as "Language",
+  s.gender as "Gender",
+  null as "Guardian_email"
+FROM active_students stu
+join (  -- detect new year rollover "today"
+  select 1 as value
+  from prefs
+  where name = 'lastpromotiondate'
+  and to_char(to_date(value, 'mm/dd/yyyy'), 'J') <> to_char(sysdate, 'J')
+  union
+  select 2 as value 
+  from (
+    select name
+        from prefs
+    where not exists (select 1 from prefs where name = 'lastpromotiondate')
+  )
+  where rownum = 1
+) on 1 = 1
+inner join students s on stu.id = s.id and stu.student_number is not null
+left JOIN U_DEF_EXT_STUDENTS s2 ON s2.studentsdcid = s.dcid
+left JOIN S_STU_X s3 ON s3.StudentsDCID = s.dcid
+JOIN SCHOOLS sch ON sch.school_number = s.schoolid
+left join cc on cc.studentid = s.id and cc.course_number = '22991X00' and cc.termid = 3100
+left join schoolstaff ss on ss.id = cc.teacherid
+left join users u on u.dcid = ss.USERS_DCID
+where s.state_studentnumber is not null AND s.enroll_status = 0
+order by s.student_number
+			]]>
+		</sql>
+</query>
+  <query name="us.al.k12.dothan.franklin.lunchstatus" coreTable="STUDENTS" flattened="true">
+		<description>Pulls student data for MCS Franklin</description>
+		<args>
+		</args>
+		<columns>
+      <column column="STUDENTS.STATE_STUDENTNUMBER">State_studentnumber</column>
+      <column column="STUDENTS.LunchStatus">Lunch_status</column>
+    </columns>
+		<sql>
+			<![CDATA[
+			WITH 
+  current_year as (
+  /*
+  -- Define the year with the largest student count
+  -- as the current school year
+  */
+  select yearid 
+  from (
+    select 
+          t.yearid as yearid,
+          count(s.dcid) as cnt
+        from students s
+    join terms t
+      on    t.schoolid = s.schoolid and s.schoolid not in (888888,999999)
+			and t.yearid >= 30
+            and t.isyearrec = 1
+            and s.entrydate between t.firstday and t.lastday
+    group by t.yearid
+    order by count(s.dcid) desc
+  )
+  where rownum = 1
+),
+  active_students as (
+  /*
+  -- Pull the most current enrollment from the PowerSchool STUDENTS table
+  -- for students enrolled in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, STU.ID
+  FROM STUDENTS STU
+  where stu.student_number is not null
+  and stu.entrydate < stu.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where stu.entrydate <= terms.lastday
+              and stu.exitdate > terms.firstday
+              and stu.schoolid = terms.schoolid
+             )
+  union
+  /*
+  -- Pull all prior enrollment records from the PowerSchool REENROLLMENTS table
+  -- for students who had multiple enrollments in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, ENR.STUDENTID
+  FROM REENROLLMENTS ENR
+  inner join students stu on enr.studentid = stu.id
+  and stu.student_number is not null
+  where enr.entrydate < enr.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where enr.entrydate <= terms.lastday
+              and enr.exitdate > terms.firstday
+              and enr.schoolid = terms.schoolid
+              )
+  )
+SELECT
+  s.state_studentnumber as "State_studentnumber",
+  s.lunchstatus as "Lunch_status"
+FROM active_students stu
+join (  -- detect new year rollover "today"
+  select 1 as value
+  from prefs
+  where name = 'lastpromotiondate'
+  and to_char(to_date(value, 'mm/dd/yyyy'), 'J') <> to_char(sysdate, 'J')
+  union
+  select 2 as value 
+  from (
+    select name
+        from prefs
+    where not exists (select 1 from prefs where name = 'lastpromotiondate')
+  )
+  where rownum = 1
+) on 1 = 1
+inner join students s on stu.id = s.id and stu.student_number is not null
+order by s.student_number
+			]]>
+		</sql>
+	</query>
+  <query name="us.al.k12.dothan.franklin.directcertification" coreTable="STUDENTS" flattened="true">
+		<description>Test Direct Certification Query</description>
+		<args>
+		</args>
+		<columns>
+			<column column="students.first_name">last_name</column>
+			<column column="students.first_name">first_name</column>
+			<column column="students.first_name">middle_name</column>
+			<column column="students.first_name">dob</column>
+			<column column="students.first_name">street</column>
+			<column column="students.first_name">city</column>
+			<column column="students.first_name">state</column>
+			<column column="students.first_name">zip</column>
+			<column column="students.first_name">guardian_lastname</column>
+			<column column="students.first_name">guardian_firstname</column>
+			<column column="students.first_name">guardian_middlename</column>
+			<column column="students.first_name">indentified_population</column>
+			<column column="students.first_name">stateid_number</column>
+		</columns>
+			<sql>
+			<![CDATA[
+			WITH 
+  current_year as (
+  /*
+  -- Define the year with the largest student count
+  -- as the current school year
+  */
+  select yearid 
+  from (
+    select 
+          t.yearid as yearid,
+          count(s.dcid) as cnt
+        from students s
+    join terms t
+      on    t.schoolid = s.schoolid and s.schoolid not in (888888,999999)
+			and t.yearid >= 30
+            and t.isyearrec = 1
+            and s.entrydate between t.firstday and t.lastday
+    group by t.yearid
+    order by count(s.dcid) desc
+  )
+  where rownum = 1
+),
+
+  active_students as (
+  /*
+  -- Pull the most current enrollment from the PowerSchool STUDENTS table
+  -- for students enrolled in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, STU.ID
+  FROM STUDENTS STU
+  where stu.student_number is not null
+  and stu.entrydate < stu.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where stu.entrydate <= terms.lastday
+              and stu.exitdate > terms.firstday
+              and stu.schoolid = terms.schoolid
+             )
+  union
+  /*
+  -- Pull all prior enrollment records from the PowerSchool REENROLLMENTS table
+  -- for students who had multiple enrollments in the current school year
+  */
+  SELECT STU.STUDENT_NUMBER, ENR.STUDENTID
+  FROM REENROLLMENTS ENR
+  inner join students stu on enr.studentid = stu.id
+  and stu.student_number is not null
+  where enr.entrydate < enr.exitdate
+  and exists (select 1
+              from terms
+              join current_year y on y.yearid = terms.yearid and terms.isyearrec = 1
+              where enr.entrydate <= terms.lastday
+              and enr.exitdate > terms.firstday
+              and enr.schoolid = terms.schoolid
+              )
+  )
+
+SELECT
+  s.last_name as last_name,
+  s.first_name as first_name,
+  s.middle_name as middle_name,
+  to_char(s.dob, 'mmddyy') as dob,
+  s.street as street,
+  s.city as city,
+  s.state as state,
+  s.zip as zip,
+  p.firstname as guardian_lastname,
+  p.lastname as guardian_firstname,
+  p.middlename as guardian_middlename,
+  case
+    when l.identified_population = 4 then 'SNAP'
+    when l.identified_population = 5 then 'TANF'
+    when l.identified_population = 6 then 'FDPIR'
+    when l.identified_population = 7 then 'Foster'
+    when l.identified_population = 8 then 'Extended Eligibility - SNAP'
+    when l.identified_population = 9 then 'Extended Eligibility - TANF'
+    when l.identified_population = 10 then 'Medicaid'
+    when l.identified_population = 11 then 'SCHIP'
+    when l.identified_population = 12 then 'Homeless'
+    when l.identified_population = 13 then 'Migrant'
+    when l.identified_population = 15 then 'DHR'
+    when l.identified_population = 20 then 'Parent Declined Service'
+    when l.identified_population = 99 then 'Temporary DC'
+    else null end as indentified_population,
+  s.State_StudentNumber as stateid_number
+FROM active_students stu
+join (  -- detect new year rollover "today"
+  select 1 as value
+  from prefs
+  where name = 'lastpromotiondate'
+  and to_char(to_date(value, 'mm/dd/yyyy'), 'J') <> to_char(sysdate, 'J')
+  union
+  select 2 as value 
+  from (
+    select name
+        from prefs
+    where not exists (select 1 from prefs where name = 'lastpromotiondate')
+  )
+  where rownum = 1
+) on 1 = 1
+inner join students s on stu.id = s.id and stu.student_number is not null
+join S_AL_STU_LUNCH_X l on s.dcid = l.StudentsDCID and l.identified_population is not null
+left join studentcontactassoc sca on s.dcid=sca.studentdcid and sca.CONTACTPRIORITYORDER = 1
+left outer join person p on sca.personid = p.id
+			]]>
+			</sql>
+	</query>
+</queries>
