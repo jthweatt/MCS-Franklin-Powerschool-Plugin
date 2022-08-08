@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Changed
 
-- Direct Certification power query will now export Identified Populationas it's stored code (integer) instead of it's name (string).
+- Direct Certification power query will now export Identified Population as its stored code (integer) instead of its name (string).
 
 ## [1.1.2] - 2021-09-30
 
