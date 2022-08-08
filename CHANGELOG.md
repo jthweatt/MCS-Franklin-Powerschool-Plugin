@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [1.1.3] - 2022-08-08
+
+### Changed
+
+- Direct Certification power query will now export Identified Populationas it's stored code (integer) instead of it's name (string).
+
 ## [1.1.2] - 2021-09-30
 
 ### Fixed

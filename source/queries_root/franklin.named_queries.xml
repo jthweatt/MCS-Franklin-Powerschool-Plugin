@@ -328,7 +328,7 @@ order by s.student_number
 SELECT
   s.last_name as last_name,
   s.first_name as first_name,
-  s.middle_name as middle_name,
+  LEFT(s.middle_name, 1) as middle_initial,
   to_char(s.dob, 'mmddyy') as dob,
   s.street as street,
   s.city as city,
@@ -337,21 +337,7 @@ SELECT
   p.firstname as guardian_lastname,
   p.lastname as guardian_firstname,
   p.middlename as guardian_middlename,
-  case
-    when l.identified_population = 4 then 'SNAP'
-    when l.identified_population = 5 then 'TANF'
-    when l.identified_population = 6 then 'FDPIR'
-    when l.identified_population = 7 then 'Foster'
-    when l.identified_population = 8 then 'Extended Eligibility - SNAP'
-    when l.identified_population = 9 then 'Extended Eligibility - TANF'
-    when l.identified_population = 10 then 'Medicaid'
-    when l.identified_population = 11 then 'SCHIP'
-    when l.identified_population = 12 then 'Homeless'
-    when l.identified_population = 13 then 'Migrant'
-    when l.identified_population = 15 then 'DHR'
-    when l.identified_population = 20 then 'Parent Declined Service'
-    when l.identified_population = 99 then 'Temporary DC'
-    else null end as indentified_population,
+  l.identified_population as identified_population,
   s.State_StudentNumber as stateid_number
 FROM active_students stu
 join (  -- detect new year rollover "today"
